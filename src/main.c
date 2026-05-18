@@ -17,12 +17,29 @@
 #include <stdio.h>
 #include <string.h>
 
+/* ── HISTORY state (must be global so it persists across calls) ── */
+#define LSH_HISTORY_MAX 100
+char *lsh_history_list[LSH_HISTORY_MAX];
+int   lsh_history_count = 0;
+
+/* Save a copy of every line the user types */
+void lsh_add_history(char *line)
+{
+  if (lsh_history_count < LSH_HISTORY_MAX) {
+    lsh_history_list[lsh_history_count++] = strdup(line);
+  }
+}
+
 /*
   Function Declarations for builtin shell commands:
  */
 int lsh_cd(char **args);
 int lsh_help(char **args);
 int lsh_exit(char **args);
+int lsh_pwd(char **args);      /* NEW */
+int lsh_echo(char **args);     /* NEW */
+int lsh_history(char **args);  /* NEW */
+int lsh_env(char **args);      /* NEW */
 
 /*
   List of builtin commands, followed by their corresponding functions.
@@ -30,13 +47,21 @@ int lsh_exit(char **args);
 char *builtin_str[] = {
   "cd",
   "help",
-  "exit"
+  "exit",
+  "pwd",      /* NEW */
+  "echo",     /* NEW */
+  "history",  /* NEW */
+  "env"       /* NEW */
 };
 
 int (*builtin_func[]) (char **) = {
   &lsh_cd,
   &lsh_help,
-  &lsh_exit
+  &lsh_exit,
+  &lsh_pwd,      /* NEW */
+  &lsh_echo,     /* NEW */
+  &lsh_history,  /* NEW */
+  &lsh_env       /* NEW */
 };
 
 int lsh_num_builtins() {
@@ -93,6 +118,77 @@ int lsh_exit(char **args)
 {
   return 0;
 }
+
+/* ── NEW BUILTINS ──────────────────────────────────────────────── */
+
+/**
+   @brief Builtin command: print current working directory.
+   @param args List of args.  Not examined.
+   @return Always returns 1, to continue executing.
+ */
+int lsh_pwd(char **args)
+{
+  char cwd[1024];
+  if (getcwd(cwd, sizeof(cwd)) != NULL) {
+    printf("%s\n", cwd);
+  } else {
+    perror("lsh: pwd");
+  }
+  return 1;
+}
+
+/**
+   @brief Builtin command: print arguments to stdout.
+   @param args List of args.  args[0] is "echo", args[1..] are printed.
+   @return Always returns 1, to continue executing.
+ */
+int lsh_echo(char **args)
+{
+  int i = 1;  /* skip args[0] which is "echo" */
+  while (args[i] != NULL) {
+    printf("%s", args[i]);
+    if (args[i + 1] != NULL) {
+      printf(" ");
+    }
+    i++;
+  }
+  printf("\n");
+  return 1;
+}
+
+/**
+   @brief Builtin command: print command history.
+   @param args List of args.  Not examined.
+   @return Always returns 1, to continue executing.
+ */
+int lsh_history(char **args)
+{
+  if (lsh_history_count == 0) {
+    printf("lsh: no commands in history\n");
+  } else {
+    for (int i = 0; i < lsh_history_count; i++) {
+      printf("%d  %s\n", i + 1, lsh_history_list[i]);
+    }
+  }
+  return 1;
+}
+
+/**
+   @brief Builtin command: print all environment variables.
+   @param args List of args.  Not examined.
+   @return Always returns 1, to continue executing.
+ */
+extern char **environ;  /* provided by the C runtime */
+
+int lsh_env(char **args)
+{
+  for (char **env = environ; *env != NULL; env++) {
+    printf("%s\n", *env);
+  }
+  return 1;
+}
+
+/* ── END NEW BUILTINS ──────────────────────────────────────────── */
 
 /**
   @brief Launch a program and wait for it to terminate.
@@ -232,7 +328,7 @@ char **lsh_split_line(char *line)
       tokens_backup = tokens;
       tokens = realloc(tokens, bufsize * sizeof(char*));
       if (!tokens) {
-		free(tokens_backup);
+        free(tokens_backup);
         fprintf(stderr, "lsh: allocation error\n");
         exit(EXIT_FAILURE);
       }
@@ -256,6 +352,7 @@ void lsh_loop(void)
   do {
     printf("> ");
     line = lsh_read_line();
+    lsh_add_history(line);   /* NEW: save every command to history */
     args = lsh_split_line(line);
     status = lsh_execute(args);
 
@@ -281,4 +378,3 @@ int main(int argc, char **argv)
 
   return EXIT_SUCCESS;
 }
-
